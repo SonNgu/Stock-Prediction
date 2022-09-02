@@ -22,6 +22,8 @@ import pandas_datareader as web
 import datetime as dt
 import tensorflow as tf
 
+import statistics
+
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, LSTM, InputLayer
@@ -43,6 +45,8 @@ data = web.DataReader(COMPANY, DATA_SOURCE, TRAIN_START, TRAIN_END) # Read data 
 # It could be a bug with pandas_datareader.DataReader() but it
 # does read also the date before the start date. Thus, you'll see that 
 # it includes the date 22/05/2012 in data!
+
+df = pd.DataFrame(data)
 
 # For more details: 
 # https://pandas.pydata.org/pandas-docs/stable/user_guide/dsintro.html
@@ -106,6 +110,38 @@ x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
 # If not, save the data into a directory
 # 2) Change the model to increase accuracy?
 #------------------------------------------------------------------------------
+import plotly.graph_objects as go
+import plotly.express as px
+
+window_size = 1
+def plot_graph(window_size=window_size):
+    data_mean = df.rolling(window_size).mean()
+    data_mean = data_mean.iloc[window_size-1 :: window_size, :]
+    trace1 = {
+        'x': data_mean.index,
+        'open': data_mean["Open"],
+        'close': data_mean["Close"],
+        'high': data_mean["High"],
+        'low': data_mean["Low"],
+        'type': 'candlestick',
+        'name': COMPANY,
+        'showlegend': True
+    }
+    fig = go.Figure(data=[trace1])
+    fig.update_traces(hovertext = 'trading days: ' + str(window_size))
+    open = pd.DataFrame({'value':data_mean['Open'],'column':'open'})
+    close = pd.DataFrame({'value':data_mean['Close'],'column':'close'})
+    high = pd.DataFrame({'value':data_mean['High'],'column':'high'})
+    low = pd.DataFrame({'value':data_mean['Low'],'column':'low'})
+    adjclose = pd.DataFrame({'value':data_mean['Adj Close'],'column':'adjclose'})
+    box_data = pd.concat([open, close, high, low, adjclose])
+    fig2 = px.box(box_data, x = 'column', y = 'value', title = COMPANY + " " + str(window_size) + " consecutive trading day/s")
+    fig.show()
+    fig2.show()
+
+plot_graph()
+
+
 model = Sequential() # Basic neural network
 # See: https://www.tensorflow.org/api_docs/python/tf/keras/Sequential
 # for some useful examples
