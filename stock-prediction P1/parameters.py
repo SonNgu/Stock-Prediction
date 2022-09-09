@@ -29,9 +29,9 @@ N_LAYERS = 2
 # LSTM cell
 CELL = LSTM
 # 256 LSTM neurons
-UNITS = 256
+UNITS = 500
 # 40% dropout
-DROPOUT = 0.4
+DROPOUT = 0.2
 # whether to use bidirectional RNNs
 BIDIRECTIONAL = False
 
@@ -42,8 +42,8 @@ BIDIRECTIONAL = False
 # huber loss
 LOSS = "huber_loss"
 OPTIMIZER = "adam"
-BATCH_SIZE = 64
-EPOCHS = 500
+BATCH_SIZE = 30
+EPOCHS = 50
 
 # Amazon stock market
 ticker = "AMZN"

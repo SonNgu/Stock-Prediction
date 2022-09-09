@@ -8,7 +8,7 @@ CELL = LSTM
 # 256 LSTM neurons
 UNITS = 256
 # 40% dropout
-DROPOUT = 0.4
+DROPOUT = 0.2
 # whether to use bidirectional RNNs
 BIDIRECTIONAL = False
 
@@ -20,4 +20,4 @@ BIDIRECTIONAL = False
 LOSS = "huber_loss"
 OPTIMIZER = "adam"
 BATCH_SIZE = 25
-EPOCHS = 1
+EPOCHS = 32
