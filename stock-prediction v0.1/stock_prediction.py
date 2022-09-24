@@ -29,7 +29,6 @@ from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
 from yahoo_fin import stock_info as si
 from collections import deque
-from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Bidirectional
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
@@ -47,11 +46,11 @@ COMPANY = "TSLA"
 
 # Number of days to look back to base the prediction
 PREDICTION_DAYS = 100 # Original
-LOOKUP_STEPS = 1
+LOOKUP_STEPS = 10
 
 TRAIN_START = dt.datetime(2012, 5, 23)     # Start date to read
 TRAIN_END = dt.datetime(2020, 1, 7)       # End date to read
-def load_data(test_size = 0.2, lookup_step = 1, split_by_date = True, shuffle = True, scale = True):
+def load_data(test_size = 0.2, lookup_step = 10, split_by_date = True, shuffle = True, scale = True):
     if isinstance(COMPANY, str):
         # load it from yahoo_fin library
         data = pd.DataFrame(web.DataReader(COMPANY, DATA_SOURCE, TRAIN_START, TRAIN_END)) # Read data using yahoo
@@ -64,24 +63,28 @@ def load_data(test_size = 0.2, lookup_step = 1, split_by_date = True, shuffle = 
     if "date" not in data.columns:
         data["date"] = data.index
 
-    data.dropna(inplace=True)
-
-    scale_data = data.copy()
+    scaled_data = {}
 
     if scale:
         column_scaler = {}
         # scale the data (prices) from 0 to 1
         for column in ["Open","Close","High","Low","Adj Close"]:
             scaler = preprocessing.MinMaxScaler()
-            scale_data[column] = scaler.fit_transform(np.expand_dims(scale_data[column].values, axis=1))
+            scaled_data[column] = scaler.fit_transform(np.expand_dims(data[column].values, axis=1))
+            column_scaler[column] = scaler
+
+        scaled_data["column_scaler"] = column_scaler
 
     data['future'] = data['Adj Close'].shift(-lookup_step)
+
+    data.dropna(inplace=True)
 
     sequence_data = []
     sequences = deque(maxlen=PREDICTION_DAYS)
 
     for entry, target in zip(data[["Open","Close","High","Low","Adj Close"] + ["date"]].values, data['future'].values):
         sequences.append(entry)
+        print (target)
         if len(sequences) == PREDICTION_DAYS:
             sequence_data.append([np.array(sequences), target])
 
@@ -103,45 +106,18 @@ def load_data(test_size = 0.2, lookup_step = 1, split_by_date = True, shuffle = 
         # split the dataset randomly
         x_train, x_test, y_train, y_test = train_test_split(X, y, 
                                                             test_size=test_size, shuffle=shuffle)
+
+    dates = x_test[:, -1, -1]
+    test_data = data.loc[dates]
+    test_data = test_data[~test_data.index.duplicated(keep='first')]
     x_train = x_train[:, :, :len(["Open","Close","High","Low","Adj Close"])].astype(np.float32)
     x_test = x_test[:, :, :len(["Open","Close","High","Low","Adj Close"])].astype(np.float32)
 
-    return data, x_train, y_train, x_test, y_test, scale_data
-# It could be a bug with pandas_datareader.DataReader() but it
-# does read also the date before the start date. Thus, you'll see that 
-# it includes the date 22/05/2012 in data!
-# For more details: 
-# https://pandas.pydata.org/pandas-docs/stable/user_guide/dsintro.html
-#------------------------------------------------------------------------------
-# Prepare Data
-## To do:
-# 1) Check if data has been prepared before. 
-# If so, load the saved data
-# If not, save the data into a directory
-# 2) Use a different price value eg. mid-point of Open & Close
-# 3) Change the Prediction days
-#------------------------------------------------------------------------------
 
-# Note that, by default, feature_range=(0, 1). Thus, if you want a different 
-# feature_range (min,max) then you'll need to specify it here
 
-# Flatten and normalise the data
-# First, we reshape a 1D array(n) to 2D array(n,1)
-# We have to do that because sklearn.preprocessing.fit_transform()
-# requires a 2D array
-# Here n == len(scaled_data)
-# Then, we scale the whole array to the range (0,1)
-# The parameter -1 allows (np.)reshape to figure out the array size n automatically 
-# values.reshape(-1, 1) 
-# https://stackoverflow.com/questions/18691084/what-does-1-mean-in-numpy-reshape'
-# When reshaping an array, the new shape must contain the same number of elements 
-# as the old shape, meaning the products of the two shapes' dimensions must be equal. 
-# When using a -1, the dimension corresponding to the -1 will be the product of 
-# the dimensions of the original array divided by the product of the dimensions 
-# given to reshape so as to maintain the same number of elements.
+    return data, x_train, y_train, x_test, y_test, scaled_data, test_data
 
-# To store the training data
-data, x_train, y_train, x_test, y_test, scale_data = load_data()
+data, x_train, y_train, x_test, y_test, scaled_data, test_data = load_data()
 
 if not os.path.isdir("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/results"):
     os.mkdir("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/results")
@@ -186,7 +162,7 @@ def plot_graph(window_size=window_size):
     fig.show()
     fig2.show()
 
-plot_graph()
+#plot_graph()
 
 def create_model(sequence_length, n_features, units=256, cell=LSTM, n_layers=2, dropout=0.3,
                 loss="mean_absolute_error", optimizer="rmsprop", bidirectional=False):
@@ -216,13 +192,13 @@ def create_model(sequence_length, n_features, units=256, cell=LSTM, n_layers=2, 
     model.compile(loss=loss, metrics=["mean_absolute_error"], optimizer=optimizer)
     return model
 
-model_name = f"{date_now}_{COMPANY}-\{LOSS}-{OPTIMIZER}-{CELL.__name__}-seq-{PREDICTION_DAYS}-step-{LOOKUP_STEPS}-layers-{N_LAYERS}-units-{UNITS}"
+model_name = f"{date_now}_{COMPANY}-{LOSS}-{OPTIMIZER}-{CELL.__name__}-seq-{PREDICTION_DAYS}-step-{LOOKUP_STEPS}-layers-{N_LAYERS}-units-{UNITS}"
 
 model = create_model(PREDICTION_DAYS, len(["Open","Close","High","Low","Adj Close"]), loss=LOSS, units=UNITS, cell=CELL, n_layers=N_LAYERS,
                     dropout=DROPOUT, optimizer=OPTIMIZER, bidirectional=BIDIRECTIONAL)
 
-checkpointer = ModelCheckpoint(os.path.join("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/results", model_name + ".h5"), save_weights_only=True, save_best_only=True, verbose=1)
-tensorboard = TensorBoard(log_dir=os.path.join("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/logs", model_name))
+checkpointer = ModelCheckpoint(os.path.join("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/results/", model_name + ".h5"), save_weights_only=True, save_best_only=True, verbose=1)
+tensorboard = TensorBoard(log_dir=os.path.join("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/logs/", model_name))
 
 history = model.fit(x_train, y_train,
                     batch_size=BATCH_SIZE,
@@ -231,4 +207,30 @@ history = model.fit(x_train, y_train,
                     callbacks=[checkpointer, tensorboard],
                     verbose=1)
 
+def get_final_df(model, data):
+    y_pred = model.predict(x_test)
+    if scale:
+        y_test_data = np.squeeze(scaled_data["column_scaler"]["Adj Close"].inverse_transform(np.expand_dims(y_test, axis=0)))
+        y_pred = np.squeeze(scaled_data["column_scaler"]["Adj Close"].inverse_transform(y_pred))
+    test_data[f"true_adjclose_{LOOKUP_STEPS}"] = y_test_data
+    test_data[f"adjclose_{LOOKUP_STEPS}"] = y_pred
+    
+    data.sort_index(inplace=True)
+    final_df = test_data
+    
+    return final_df
 
+def plot_pred_graph(test_df):
+    """
+    This function plots true close price along with predicted close price
+    with blue and red colors respectively
+    """
+    plt.plot(test_df[f'true_adjclose_{LOOKUP_STEPS}'], c='b')
+    plt.plot(test_df[f'adjclose_{LOOKUP_STEPS}'], c='r')
+    plt.xlabel("Days")
+    plt.ylabel("Price")
+    plt.legend(["Actual Price", "Predicted Price"])
+    plt.show()
+
+pred_df = get_final_df(model, data)
+plot_pred_graph(pred_df)
