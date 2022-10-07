@@ -1,3 +1,4 @@
+from unittest import result
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Bidirectional
@@ -79,6 +80,7 @@ def load_data(ticker, n_steps=50, scale=True, shuffle=True, lookup_step=1, split
     # last `lookup_step` columns contains NaN in future column
     # get them before droping NaNs
     last_sequence = np.array(df[feature_columns].tail(lookup_step))
+    print (last_sequence)
     
     # drop NaNs
     df.dropna(inplace=True)
@@ -95,6 +97,7 @@ def load_data(ticker, n_steps=50, scale=True, shuffle=True, lookup_step=1, split
     # for instance, if n_steps=50 and lookup_step=10, last_sequence should be of 60 (that is 50+10) length
     # this last_sequence will be used to predict future stock prices that are not available in the dataset
     last_sequence = list([s[:len(feature_columns)] for s in sequences]) + list(last_sequence)
+    print (last_sequence)
     last_sequence = np.array(last_sequence).astype(np.float32)
     # add to result
     result['last_sequence'] = last_sequence
@@ -165,3 +168,5 @@ def create_model(sequence_length, n_features, units=256, cell=LSTM, n_layers=2, 
     model.add(Dense(1, activation="linear"))
     model.compile(loss=loss, metrics=["mean_absolute_error"], optimizer=optimizer)
     return model
+
+data = load_data()

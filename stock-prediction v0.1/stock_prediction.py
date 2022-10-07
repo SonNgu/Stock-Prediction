@@ -45,12 +45,12 @@ DATA_SOURCE = "yahoo"
 COMPANY = "TSLA"
 
 # Number of days to look back to base the prediction
-PREDICTION_DAYS = 100 # Original
-LOOKUP_STEPS = 10
+PREDICTION_DAYS = 50 # Original
+LOOKUP_STEPS = 15
 
 TRAIN_START = dt.datetime(2012, 5, 23)     # Start date to read
 TRAIN_END = dt.datetime(2020, 1, 7)       # End date to read
-def load_data(test_size = 0.2, lookup_step = 10, split_by_date = True, shuffle = True, scale = True):
+def load_data(test_size = 0.2, lookup_step = LOOKUP_STEPS, split_by_date = True, shuffle = True, scale = True):
     if isinstance(COMPANY, str):
         # load it from yahoo_fin library
         data = pd.DataFrame(web.DataReader(COMPANY, DATA_SOURCE, TRAIN_START, TRAIN_END)) # Read data using yahoo
@@ -84,7 +84,6 @@ def load_data(test_size = 0.2, lookup_step = 10, split_by_date = True, shuffle =
 
     for entry, target in zip(data[["Open","Close","High","Low","Adj Close"] + ["date"]].values, data['future'].values):
         sequences.append(entry)
-        print (target)
         if len(sequences) == PREDICTION_DAYS:
             sequence_data.append([np.array(sequences), target])
 
@@ -209,7 +208,7 @@ history = model.fit(x_train, y_train,
 
 def get_final_df(model, data):
     y_pred = model.predict(x_test)
-    if scale:
+    if SCALE:
         y_test_data = np.squeeze(scaled_data["column_scaler"]["Adj Close"].inverse_transform(np.expand_dims(y_test, axis=0)))
         y_pred = np.squeeze(scaled_data["column_scaler"]["Adj Close"].inverse_transform(y_pred))
     test_data[f"true_adjclose_{LOOKUP_STEPS}"] = y_test_data
@@ -220,17 +219,39 @@ def get_final_df(model, data):
     
     return final_df
 
-def plot_pred_graph(test_df):
+
+def forecast(model):
+    prediction = model.predict(x_test[:LOOKUP_STEPS])
+    dates = pd.to_datetime(data["date"])
+    forecast_datetime = pd.date_range(list(dates)[-1], periods = LOOKUP_STEPS, freq='1d').tolist()
+    forecast_dates = []
+    for i in forecast_datetime:
+        forecast_dates.append(i.date())
+
+    if SCALE:
+        predicted_price = scaled_data["column_scaler"]["Adj Close"].inverse_transform(prediction)
+    else:
+        predicted_price = prediction
+
+    pred_df = pd.DataFrame(index = np.array(forecast_dates), columns = {'Adj Close':predicted_price})
+    pred_df['Adj Close'] = predicted_price
+
+    return pred_df
+
+def plot_pred_graph(test_df, pred_df):
     """
     This function plots true close price along with predicted close price
     with blue and red colors respectively
     """
     plt.plot(test_df[f'true_adjclose_{LOOKUP_STEPS}'], c='b')
     plt.plot(test_df[f'adjclose_{LOOKUP_STEPS}'], c='r')
+    plt.plot(pred_df, c='g')
+    plt.plot()
     plt.xlabel("Days")
     plt.ylabel("Price")
-    plt.legend(["Actual Price", "Predicted Price"])
+    plt.legend(["Actual Price", "Predicted Price","Forecast"])
     plt.show()
 
-pred_df = get_final_df(model, data)
-plot_pred_graph(pred_df)
+test_df = get_final_df(model, data)
+pred_df = forecast(model)
+plot_pred_graph(test_df, pred_df)

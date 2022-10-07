@@ -4,7 +4,7 @@ from tensorflow.keras.layers import LSTM, GRU
 
 N_LAYERS = 2
 # LSTM cell
-CELL = GRU
+CELL = LSTM
 # 256 LSTM neurons
 UNITS = 256
 # 40% dropout
@@ -13,12 +13,12 @@ DROPOUT = 0.4
 BIDIRECTIONAL = False
 
 ### training parameters
-scale = True
+SCALE = True
 
 # mean absolute error loss
 # LOSS = "mae"
 # huber loss
 LOSS = "huber_loss"
 OPTIMIZER = "adam"
-BATCH_SIZE = 25
-EPOCHS = 1
+BATCH_SIZE = 64
+EPOCHS = 5
