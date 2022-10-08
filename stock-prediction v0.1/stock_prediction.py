@@ -33,6 +33,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Bidirectional
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 from parameters import *
+from statsmodels.tsa.arima_model import ARIMA
 
 #------------------------------------------------------------------------------
 # Load Data
@@ -49,8 +50,9 @@ PREDICTION_DAYS = 50 # Original
 LOOKUP_STEPS = 15
 
 TRAIN_START = dt.datetime(2012, 5, 23)     # Start date to read
-TRAIN_END = dt.datetime(2020, 1, 7)       # End date to read
-def load_data(test_size = 0.2, lookup_step = LOOKUP_STEPS, split_by_date = True, shuffle = True, scale = True):
+TRAIN_END = dt.datetime(2022, 1, 7)       # End date to read
+
+def load_data(test_size = 0.2, lookup_step = LOOKUP_STEPS, split_by_date = True, shuffle = True, scale = SCALE):
     if isinstance(COMPANY, str):
         # load it from yahoo_fin library
         data = pd.DataFrame(web.DataReader(COMPANY, DATA_SOURCE, TRAIN_START, TRAIN_END)) # Read data using yahoo
@@ -70,7 +72,7 @@ def load_data(test_size = 0.2, lookup_step = LOOKUP_STEPS, split_by_date = True,
         # scale the data (prices) from 0 to 1
         for column in ["Open","Close","High","Low","Adj Close"]:
             scaler = preprocessing.MinMaxScaler()
-            scaled_data[column] = scaler.fit_transform(np.expand_dims(data[column].values, axis=1))
+            data[column] = scaler.fit_transform(np.expand_dims(data[column].values, axis=1))
             column_scaler[column] = scaler
 
         scaled_data["column_scaler"] = column_scaler
@@ -79,6 +81,8 @@ def load_data(test_size = 0.2, lookup_step = LOOKUP_STEPS, split_by_date = True,
 
     data.dropna(inplace=True)
 
+    last_sequence = np.array(data[["Open","Close","High","Low","Adj Close"]].tail(lookup_step))
+
     sequence_data = []
     sequences = deque(maxlen=PREDICTION_DAYS)
 
@@ -86,6 +90,9 @@ def load_data(test_size = 0.2, lookup_step = LOOKUP_STEPS, split_by_date = True,
         sequences.append(entry)
         if len(sequences) == PREDICTION_DAYS:
             sequence_data.append([np.array(sequences), target])
+
+    last_sequence = list([s[:len(["Open","Close","High","Low","Adj Close"])] for s in sequences]) + list(last_sequence)
+    last_sequence = np.array(last_sequence).astype(np.float32)
 
     X, y = [], []
     for seq, target in sequence_data:
@@ -114,9 +121,11 @@ def load_data(test_size = 0.2, lookup_step = LOOKUP_STEPS, split_by_date = True,
 
 
 
-    return data, x_train, y_train, x_test, y_test, scaled_data, test_data
+    return data, x_train, y_train, x_test, y_test, scaled_data, test_data, last_sequence
 
-data, x_train, y_train, x_test, y_test, scaled_data, test_data = load_data()
+data, x_train, y_train, x_test, y_test, scaled_data, test_data, last_sequence = load_data()
+print(test_data)
+print(x_test)
 
 if not os.path.isdir("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/results"):
     os.mkdir("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/results")
@@ -199,59 +208,90 @@ model = create_model(PREDICTION_DAYS, len(["Open","Close","High","Low","Adj Clos
 checkpointer = ModelCheckpoint(os.path.join("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/results/", model_name + ".h5"), save_weights_only=True, save_best_only=True, verbose=1)
 tensorboard = TensorBoard(log_dir=os.path.join("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/logs/", model_name))
 
-history = model.fit(x_train, y_train,
-                    batch_size=BATCH_SIZE,
-                    epochs=EPOCHS,
-                    validation_data=(x_test, y_test),
-                    callbacks=[checkpointer, tensorboard],
-                    verbose=1)
+def load_model():
+    model_exists = os.path.exists(os.path.join("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/results/", model_name + ".h5"))
 
-def get_final_df(model, data):
+    if not model_exists:
+        history = model.fit(x_train, y_train,
+                        batch_size=BATCH_SIZE,
+                        epochs=EPOCHS,
+                        validation_data=(x_test, y_test),
+                        callbacks=[checkpointer, tensorboard],
+                        verbose=1)
+    else:
+        model.load_weights(os.path.join("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/results/", model_name + ".h5"))
+
+def get_final_df(model):
+    buy_profit  = lambda current, pred_future, true_future: true_future - current if pred_future > current else 0
+    sell_profit = lambda current, pred_future, true_future: current - true_future if pred_future < current else 0
     y_pred = model.predict(x_test)
     if SCALE:
         y_test_data = np.squeeze(scaled_data["column_scaler"]["Adj Close"].inverse_transform(np.expand_dims(y_test, axis=0)))
         y_pred = np.squeeze(scaled_data["column_scaler"]["Adj Close"].inverse_transform(y_pred))
+    else:
+        y_test_data = y_test
     test_data[f"true_adjclose_{LOOKUP_STEPS}"] = y_test_data
     test_data[f"adjclose_{LOOKUP_STEPS}"] = y_pred
     
-    data.sort_index(inplace=True)
+    
+    test_data.sort_index(inplace=True)
     final_df = test_data
+    
+
+    final_df["buy_profit"] = list(map(buy_profit,
+                                    final_df["Adj Close"],
+                                    final_df[f"adjclose_{LOOKUP_STEPS}"],
+                                    final_df[f"true_adjclose_{LOOKUP_STEPS}"])
+                                    # since we don't have profit for last sequence, add 0's
+                                    )
+    # add the sell profit column
+    final_df["sell_profit"] = list(map(sell_profit,
+                                    final_df["Adj Close"],
+                                    final_df[f"adjclose_{LOOKUP_STEPS}"],
+                                    final_df[f"true_adjclose_{LOOKUP_STEPS}"])
+                                    # since we don't have profit for last sequence, add 0's
+                                    )
     
     return final_df
 
 
-def forecast(model):
-    prediction = model.predict(x_test[:LOOKUP_STEPS])
-    dates = pd.to_datetime(data["date"])
-    forecast_datetime = pd.date_range(list(dates)[-1], periods = LOOKUP_STEPS, freq='1d').tolist()
-    forecast_dates = []
-    for i in forecast_datetime:
-        forecast_dates.append(i.date())
+def predict_price(model, data):
+    last_sequence = data[-PREDICTION_DAYS:]
+
+    last_sequence = np.expand_dims(last_sequence, axis=0)
+
+    prediction = model.predict(last_sequence)
 
     if SCALE:
-        predicted_price = scaled_data["column_scaler"]["Adj Close"].inverse_transform(prediction)
+        predicted_price = scaled_data["column_scaler"]["Adj Close"].inverse_transform(prediction)[0][0]
     else:
-        predicted_price = prediction
+        predicted_price = prediction[0][0]
+    return predicted_price
 
-    pred_df = pd.DataFrame(index = np.array(forecast_dates), columns = {'Adj Close':predicted_price})
-    pred_df['Adj Close'] = predicted_price
-
-    return pred_df
-
-def plot_pred_graph(test_df, pred_df):
+def plot_pred_graph(test_df):
     """
     This function plots true close price along with predicted close price
     with blue and red colors respectively
     """
     plt.plot(test_df[f'true_adjclose_{LOOKUP_STEPS}'], c='b')
     plt.plot(test_df[f'adjclose_{LOOKUP_STEPS}'], c='r')
-    plt.plot(pred_df, c='g')
     plt.plot()
     plt.xlabel("Days")
     plt.ylabel("Price")
     plt.legend(["Actual Price", "Predicted Price","Forecast"])
     plt.show()
 
-test_df = get_final_df(model, data)
-pred_df = forecast(model)
-plot_pred_graph(test_df, pred_df)
+load_model()
+test_df = get_final_df(model)
+pred = predict_price(model, last_sequence)
+print(pred)
+df_exists = os.path.exists(os.path.join("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/results/", model_name + ".pkl"))
+if not df_exists:
+    test_df.to_pickle(os.path.join("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/results/", model_name + ".pkl"))
+total_buy_profit  = test_df["buy_profit"].sum()
+total_sell_profit = test_df["sell_profit"].sum()
+print("Total buy profit:", total_buy_profit)
+print("Total sell profit:", total_sell_profit)
+plot_pred_graph(test_df)
+
+
