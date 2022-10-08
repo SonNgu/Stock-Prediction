@@ -50,7 +50,7 @@ PREDICTION_DAYS = 50 # Original
 LOOKUP_STEPS = 15
 
 TRAIN_START = dt.datetime(2012, 5, 23)     # Start date to read
-TRAIN_END = dt.datetime(2022, 1, 7)       # End date to read
+TRAIN_END = dt.datetime(2020, 1, 7)       # End date to read
 
 def load_data(test_size = 0.2, lookup_step = LOOKUP_STEPS, split_by_date = True, shuffle = True, scale = SCALE):
     if isinstance(COMPANY, str):
@@ -124,8 +124,6 @@ def load_data(test_size = 0.2, lookup_step = LOOKUP_STEPS, split_by_date = True,
     return data, x_train, y_train, x_test, y_test, scaled_data, test_data, last_sequence
 
 data, x_train, y_train, x_test, y_test, scaled_data, test_data, last_sequence = load_data()
-print(test_data)
-print(x_test)
 
 if not os.path.isdir("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/results"):
     os.mkdir("C:/Users/SonyN/Desktop/BB-GAMCS/Y3S2/Intelligent Systems/Project B/Stock-Prediction/stock-prediction v0.1/results")
@@ -228,16 +226,15 @@ def get_final_df(model):
     if SCALE:
         y_test_data = np.squeeze(scaled_data["column_scaler"]["Adj Close"].inverse_transform(np.expand_dims(y_test, axis=0)))
         y_pred = np.squeeze(scaled_data["column_scaler"]["Adj Close"].inverse_transform(y_pred))
+        adjclose = np.squeeze(scaled_data["column_scaler"]["Adj Close"].inverse_transform(np.expand_dims(test_data['Adj Close'], axis = 0)))
     else:
         y_test_data = y_test
     test_data[f"true_adjclose_{LOOKUP_STEPS}"] = y_test_data
     test_data[f"adjclose_{LOOKUP_STEPS}"] = y_pred
-    
+    test_data['Adj Close'] = adjclose
     
     test_data.sort_index(inplace=True)
     final_df = test_data
-    
-
     final_df["buy_profit"] = list(map(buy_profit,
                                     final_df["Adj Close"],
                                     final_df[f"adjclose_{LOOKUP_STEPS}"],
@@ -292,6 +289,10 @@ total_buy_profit  = test_df["buy_profit"].sum()
 total_sell_profit = test_df["sell_profit"].sum()
 print("Total buy profit:", total_buy_profit)
 print("Total sell profit:", total_sell_profit)
+accuracy_score = (len(test_df[test_df['sell_profit'] > 0]) + len(test_df[test_df['buy_profit'] > 0])) / len(test_df)
+print("Accuracy:", accuracy_score)
+
 plot_pred_graph(test_df)
+
 
 

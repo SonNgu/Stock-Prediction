@@ -21,4 +21,4 @@ SCALE = True
 LOSS = "huber_loss"
 OPTIMIZER = "adam"
 BATCH_SIZE = 64
-EPOCHS = 5
+EPOCHS = 50
