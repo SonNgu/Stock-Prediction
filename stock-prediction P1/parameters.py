@@ -42,8 +42,8 @@ BIDIRECTIONAL = False
 # huber loss
 LOSS = "huber_loss"
 OPTIMIZER = "adam"
-BATCH_SIZE = 30
-EPOCHS = 50
+BATCH_SIZE = 64
+EPOCHS = 500
 
 # Amazon stock market
 ticker = "AMZN"
